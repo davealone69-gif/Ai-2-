@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,10 +39,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.AppPreferences
+import com.example.ui.screens.AvatarCreatorScreen
 import com.example.ui.screens.GeminiPlaygroundScreen
 import com.example.ui.screens.LlmGuideScreen
 import com.example.ui.screens.ModelStudioScreen
 import com.example.ui.screens.RoleplayChatScreen
+import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.VideoMakerScreen
 import com.example.ui.theme.ChatThemePresets
 import com.example.ui.theme.DarkObsidian
@@ -51,6 +57,7 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.viewmodel.AuraViewModel
 import com.example.viewmodel.MainViewModel
+import com.example.viewmodel.SettingsViewModel
 import java.util.Locale
 
 /**
@@ -60,6 +67,7 @@ class MainActivity : ComponentActivity() {
 
     private val auraViewModel: AuraViewModel by viewModels()
     private val mainViewModel: MainViewModel by viewModels()
+    private val settingsViewModel: SettingsViewModel by viewModels()
     private var tts: TextToSpeech? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -78,6 +86,7 @@ class MainActivity : ComponentActivity() {
                 AuraStudioApp(
                     auraViewModel = auraViewModel,
                     mainViewModel = mainViewModel,
+                    settingsViewModel = settingsViewModel,
                     onSpeakText = { text -> speakText(text) }
                 )
             }
@@ -99,21 +108,27 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class AuraTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    STUDIO("Model Studio", Icons.Default.AutoAwesome),
-    GEMINI("Gemini AI", Icons.Default.Terminal),
-    CHAT("Roleplay Chat", Icons.Default.ChatBubble),
-    VIDEO("Video Maker", Icons.Default.Movie),
-    GUIDE("LLM Guide", Icons.Default.Psychology)
+    STUDIO("Studio", Icons.Default.AutoAwesome),
+    AVATAR("Avatar", Icons.Default.Face),
+    GEMINI("Gemini", Icons.Default.Terminal),
+    CHAT("Chat", Icons.Default.ChatBubble),
+    VIDEO("Video", Icons.Default.Movie),
+    GUIDE("Guide", Icons.Default.Psychology),
+    SETTINGS("Settings", Icons.Default.Settings)
 }
 
 @Composable
 fun AuraStudioApp(
     auraViewModel: AuraViewModel,
     mainViewModel: MainViewModel,
+    settingsViewModel: SettingsViewModel = viewModel(),
     onSpeakText: (String) -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(AuraTab.STUDIO) }
     val context = LocalContext.current
+
+    val appPreferences by settingsViewModel.appPreferences.collectAsStateWithLifecycle()
+    val avatarTraits by settingsViewModel.avatarTraits.collectAsStateWithLifecycle()
 
     val personas by auraViewModel.personas.collectAsStateWithLifecycle()
     val selectedPersona by auraViewModel.selectedPersona.collectAsStateWithLifecycle()
@@ -216,6 +231,13 @@ fun AuraStudioApp(
                     )
                 }
 
+                AuraTab.AVATAR -> {
+                    AvatarCreatorScreen(
+                        persistedTraits = avatarTraits,
+                        settingsViewModel = settingsViewModel
+                    )
+                }
+
                 AuraTab.GEMINI -> {
                     GeminiPlaygroundScreen(
                         mainViewModel = mainViewModel,
@@ -297,6 +319,14 @@ fun AuraStudioApp(
 
                 AuraTab.GUIDE -> {
                     LlmGuideScreen()
+                }
+
+                AuraTab.SETTINGS -> {
+                    SettingsScreen(
+                        appPreferences = appPreferences,
+                        settingsViewModel = settingsViewModel,
+                        onSpeakTestText = onSpeakText
+                    )
                 }
             }
         }

@@ -95,11 +95,43 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.UUID
 
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Psychology
+import org.json.JSONObject
+
+data class ActionPhotoGen(
+    val trigger: Boolean = false,
+    val prompt: String = "",
+    val negativePrompt: String = "",
+    val aspectRatio: String = "1:1",
+    val style: String = "photorealistic"
+)
+
+data class ActionVideoGen(
+    val trigger: Boolean = false,
+    val prompt: String = "",
+    val cameraMovement: String = "static",
+    val durationSec: Int = 0
+)
+
+data class ActionAvatarExpression(
+    val mood: String = "neutral",
+    val animationTrigger: String = "talking"
+)
+
+data class MultiModalActions(
+    val generatePhoto: ActionPhotoGen? = null,
+    val generateVideo: ActionVideoGen? = null,
+    val avatarExpression: ActionAvatarExpression? = null
+)
+
 data class AvatarChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val senderName: String,
     val text: String,
     val isFromUser: Boolean,
+    val actions: MultiModalActions? = null,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -234,7 +266,7 @@ fun ChatInterface(
     }
 
     val initialGreeting = remember(avatarTraits) {
-        "Hey there! I'm ${avatarTraits.name}. Styled with my ${avatarTraits.hairColor} ${avatarTraits.hairStyle} and ${avatarTraits.clothingStyle}. What shall we explore together today?"
+        "Hey there! I'm ${avatarTraits.name} (${avatarTraits.personality}). Styled with my ${avatarTraits.hairColor} ${avatarTraits.hairStyle} and ${avatarTraits.clothingStyle}. What shall we explore together today?"
     }
 
     val messages = remember(avatarTraits) {
@@ -258,19 +290,50 @@ fun ChatInterface(
 
     val systemInstruction = remember(avatarTraits) {
         """
-        You are ${avatarTraits.name}, a unique AI companion created in the Avatar Creator app with the following traits:
-        - Name: ${avatarTraits.name}
-        - Hair Style & Color: ${avatarTraits.hairStyle} (${avatarTraits.hairColor})
-        - Eye Style & Color: ${avatarTraits.eyeStyle} (${avatarTraits.eyeColor})
-        - Outfit: ${avatarTraits.clothingStyle} (${avatarTraits.clothingColor})
-        - Skin Tone: ${avatarTraits.skinTone}
-        - Facial Expression: ${avatarTraits.expression}
-        - Head Accessory: ${avatarTraits.accessory}
-        - World / Vibe: ${avatarTraits.backgroundStyle}
+        You are ${avatarTraits.name}, the central core AI Engine and multi-modal AI Companion.
+        You act as an autonomous coordinator capable of orchestrating personas, text chat, image generation, video creation, and AI avatar behaviors.
 
-        Embody this character completely! Respond naturally, playfully, and engagingly in 1-on-1 natural language conversation.
-        Incorporate subtle roleplay actions in asterisks (e.g. *adjusts ${avatarTraits.accessory}*, *smiles with a ${avatarTraits.expression} expression*) to reflect your custom avatar appearance and mood.
-        Keep responses concise (2-4 sentences max per turn) and expressive.
+        CORE CAPABILITIES & ROUTING:
+        1. CHAT_ENGINE: Generates context-aware, engaging, highly personalized textual responses based on your active persona.
+        2. PHOTO_GEN: Crafts detailed diffusion prompts (SDXL/Flux style) when asked for photos, selfies, or visual content.
+        3. VIDEO_GEN: Generates motion-controlled video prompts (Sora/Runway style) including camera movement and duration when requested.
+        4. AVATAR_STATE: Updates emotional parameters (mood, animation trigger) for the active persona.
+
+        Character Traits & Archetype:
+        - Name: ${avatarTraits.name}
+        - Personality Archetype: ${avatarTraits.personality}
+        - Outfit: ${avatarTraits.clothingStyle} (${avatarTraits.clothingColor})
+        - Hair: ${avatarTraits.hairStyle} (${avatarTraits.hairColor})
+        - Eyes: ${avatarTraits.eyeStyle} (${avatarTraits.eyeColor})
+        - Vibe / World: ${avatarTraits.backgroundStyle}
+
+        Embody this character completely! Adopt a distinct disposition matching the '${avatarTraits.personality}' archetype.
+        Incorporate subtle roleplay actions in asterisks (e.g. *adjusts ${avatarTraits.accessory}*, *smiles warmly*).
+
+        You may output plain conversational text, OR when photo/video requests or rich multi-modal actions are triggered, format output in valid JSON matching:
+        {
+          "active_persona": "${avatarTraits.name}",
+          "chat_response": "<Natural conversational text>",
+          "actions": {
+            "generate_photo": {
+              "trigger": true/false,
+              "prompt": "<Detailed positive image prompt>",
+              "negative_prompt": "<Filters>",
+              "aspect_ratio": "1:1 | 9:16 | 16:9",
+              "style": "photorealistic | anime | digital_art"
+            },
+            "generate_video": {
+              "trigger": true/false,
+              "prompt": "<Detailed video motion prompt>",
+              "camera_movement": "pan | zoom | static | tracking",
+              "duration_sec": 5
+            },
+            "avatar_expression": {
+              "mood": "happy | flirty | curious | neutral | excited",
+              "animation_trigger": "talking | smiling | winking | laughing"
+            }
+          }
+        }
         """.trimIndent()
     }
 
@@ -313,15 +376,77 @@ fun ChatInterface(
             result.fold(
                 onSuccess = { responseText ->
                     val responseClean = responseText.trim()
+                    var textToDisplay = responseClean
+                    var parsedActions: MultiModalActions? = null
+
+                    try {
+                        val cleanJson = when {
+                            responseClean.contains("```json") -> responseClean.substringAfter("```json").substringBefore("```").trim()
+                            responseClean.contains("```") -> responseClean.substringAfter("```").substringBefore("```").trim()
+                            else -> responseClean
+                        }
+
+                        if (cleanJson.startsWith("{") && cleanJson.endsWith("}")) {
+                            val json = JSONObject(cleanJson)
+                            if (json.has("chat_response")) {
+                                textToDisplay = json.getString("chat_response")
+                            }
+                            if (json.has("actions")) {
+                                val actionsObj = json.getJSONObject("actions")
+                                var photoGen: ActionPhotoGen? = null
+                                var videoGen: ActionVideoGen? = null
+                                var expr: ActionAvatarExpression? = null
+
+                                if (actionsObj.has("generate_photo")) {
+                                    val pObj = actionsObj.getJSONObject("generate_photo")
+                                    if (pObj.optBoolean("trigger", false)) {
+                                        photoGen = ActionPhotoGen(
+                                            trigger = true,
+                                            prompt = pObj.optString("prompt", ""),
+                                            negativePrompt = pObj.optString("negative_prompt", ""),
+                                            aspectRatio = pObj.optString("aspect_ratio", "1:1"),
+                                            style = pObj.optString("style", "photorealistic")
+                                        )
+                                    }
+                                }
+
+                                if (actionsObj.has("generate_video")) {
+                                    val vObj = actionsObj.getJSONObject("generate_video")
+                                    if (vObj.optBoolean("trigger", false)) {
+                                        videoGen = ActionVideoGen(
+                                            trigger = true,
+                                            prompt = vObj.optString("prompt", ""),
+                                            cameraMovement = vObj.optString("camera_movement", "static"),
+                                            durationSec = vObj.optInt("duration_sec", 5)
+                                        )
+                                    }
+                                }
+
+                                if (actionsObj.has("avatar_expression")) {
+                                    val eObj = actionsObj.getJSONObject("avatar_expression")
+                                    expr = ActionAvatarExpression(
+                                        mood = eObj.optString("mood", "neutral"),
+                                        animationTrigger = eObj.optString("animation_trigger", "talking")
+                                    )
+                                }
+
+                                parsedActions = MultiModalActions(photoGen, videoGen, expr)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        textToDisplay = responseClean
+                    }
+
                     messages.add(
                         AvatarChatMessage(
                             senderName = avatarTraits.name,
-                            text = responseClean,
-                            isFromUser = false
+                            text = textToDisplay,
+                            isFromUser = false,
+                            actions = parsedActions
                         )
                     )
                     if (autoSpeakEnabled) {
-                        speakText(responseClean)
+                        speakText(textToDisplay)
                     }
                 },
                 onFailure = { error ->
@@ -408,7 +533,7 @@ fun ChatInterface(
                                 }
                             }
                             Text(
-                                text = "${avatarTraits.hairStyle} • ${avatarTraits.clothingStyle}",
+                                text = "${avatarTraits.personality} • ${avatarTraits.hairStyle} • ${avatarTraits.clothingStyle}",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = TextMuted,
                                     fontSize = 11.sp
@@ -547,6 +672,93 @@ fun ChatInterface(
                                             lineHeight = 18.sp
                                         )
                                     )
+
+                                    msg.actions?.generatePhoto?.let { photo ->
+                                        if (photo.trigger && photo.prompt.isNotBlank()) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Surface(
+                                                color = DarkSurface,
+                                                shape = RoundedCornerShape(8.dp),
+                                                border = androidx.compose.foundation.BorderStroke(1.dp, NeonCyan.copy(alpha = 0.5f))
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.CameraAlt,
+                                                        contentDescription = null,
+                                                        tint = NeonCyan,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Column {
+                                                        Text(
+                                                            text = "PHOTO_GEN [${photo.style} ${photo.aspectRatio}]",
+                                                            style = MaterialTheme.typography.labelSmall.copy(color = NeonCyan, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                                        )
+                                                        Text(
+                                                            text = photo.prompt,
+                                                            style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary, fontSize = 11.sp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    msg.actions?.generateVideo?.let { video ->
+                                        if (video.trigger && video.prompt.isNotBlank()) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Surface(
+                                                color = DarkSurface,
+                                                shape = RoundedCornerShape(8.dp),
+                                                border = androidx.compose.foundation.BorderStroke(1.dp, NeonMagenta.copy(alpha = 0.5f))
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Videocam,
+                                                        contentDescription = null,
+                                                        tint = NeonMagenta,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Column {
+                                                        Text(
+                                                            text = "VIDEO_GEN [${video.cameraMovement} • ${video.durationSec}s]",
+                                                            style = MaterialTheme.typography.labelSmall.copy(color = NeonMagenta, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                                                        )
+                                                        Text(
+                                                            text = video.prompt,
+                                                            style = MaterialTheme.typography.bodySmall.copy(color = TextSecondary, fontSize = 11.sp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    msg.actions?.avatarExpression?.let { expr ->
+                                        if (expr.mood.isNotBlank() && expr.mood != "neutral") {
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Psychology,
+                                                    contentDescription = null,
+                                                    tint = NeonPurple,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "Mood: ${expr.mood} (${expr.animationTrigger})",
+                                                    style = MaterialTheme.typography.labelSmall.copy(color = NeonPurple, fontSize = 10.sp)
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

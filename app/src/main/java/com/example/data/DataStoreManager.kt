@@ -29,7 +29,8 @@ data class AvatarTraits(
     val skinTone: String = "Porcelain",
     val expression: String = "Confident Smile",
     val accessory: String = "Cyber Visor",
-    val backgroundStyle: String = "Neon Grid"
+    val backgroundStyle: String = "Neon Grid",
+    val personality: String = "Cheerful"
 )
 
 data class AppPreferences(
@@ -90,6 +91,7 @@ class DataStoreManager(private val context: Context) {
         val AVATAR_EXPRESSION = stringPreferencesKey("avatar_expression")
         val AVATAR_ACCESSORY = stringPreferencesKey("avatar_accessory")
         val AVATAR_BACKGROUND = stringPreferencesKey("avatar_background")
+        val AVATAR_PERSONALITY = stringPreferencesKey("avatar_personality")
     }
 
     val avatarTraitsFlow: Flow<AvatarTraits> = context.dataStore.data
@@ -112,7 +114,8 @@ class DataStoreManager(private val context: Context) {
                 skinTone = preferences[PreferencesKeys.AVATAR_SKIN_TONE] ?: "Porcelain",
                 expression = preferences[PreferencesKeys.AVATAR_EXPRESSION] ?: "Confident Smile",
                 accessory = preferences[PreferencesKeys.AVATAR_ACCESSORY] ?: "Cyber Visor",
-                backgroundStyle = preferences[PreferencesKeys.AVATAR_BACKGROUND] ?: "Neon Grid"
+                backgroundStyle = preferences[PreferencesKeys.AVATAR_BACKGROUND] ?: "Neon Grid",
+                personality = preferences[PreferencesKeys.AVATAR_PERSONALITY] ?: "Cheerful"
             )
         }
 
@@ -279,6 +282,7 @@ class DataStoreManager(private val context: Context) {
             preferences[PreferencesKeys.AVATAR_EXPRESSION] = traits.expression
             preferences[PreferencesKeys.AVATAR_ACCESSORY] = traits.accessory
             preferences[PreferencesKeys.AVATAR_BACKGROUND] = traits.backgroundStyle
+            preferences[PreferencesKeys.AVATAR_PERSONALITY] = traits.personality
         }
     }
 

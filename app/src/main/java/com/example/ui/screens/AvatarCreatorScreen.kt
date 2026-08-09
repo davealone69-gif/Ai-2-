@@ -166,6 +166,7 @@ fun AvatarCreatorScreen(
     val expressions = listOf("Confident Smile", "Playful Wink", "Serene", "Thoughtful", "Fierce")
     val accessories = listOf("None", "Cyber Visor", "Cat Ear Headset", "Gold Earrings", "Star Hairpin", "Round Glasses")
     val backgroundStyles = listOf("Neon Grid", "Cyber City Night", "Sunset Glow", "Abstract Void", "Pastel Aura")
+    val personalities = listOf("Cheerful", "Stoic", "Witty", "Tsundere", "Philosophical", "Sarcastic", "Nurturing")
 
     val stylePresets = listOf(
         "Cyberpunk" to AvatarTraits(
@@ -179,7 +180,8 @@ fun AvatarCreatorScreen(
             skinTone = "Porcelain",
             expression = "Confident Smile",
             accessory = "Cyber Visor",
-            backgroundStyle = "Neon Grid"
+            backgroundStyle = "Neon Grid",
+            personality = "Witty"
         ),
         "Fantasy" to AvatarTraits(
             name = "Lyra Mage",
@@ -192,7 +194,8 @@ fun AvatarCreatorScreen(
             skinTone = "Fair Pink",
             expression = "Serene",
             accessory = "Gold Earrings",
-            backgroundStyle = "Sunset Glow"
+            backgroundStyle = "Sunset Glow",
+            personality = "Philosophical"
         ),
         "Professional" to AvatarTraits(
             name = "Elena Executive",
@@ -205,7 +208,8 @@ fun AvatarCreatorScreen(
             skinTone = "Golden Glow",
             expression = "Thoughtful",
             accessory = "Round Glasses",
-            backgroundStyle = "Abstract Void"
+            backgroundStyle = "Abstract Void",
+            personality = "Stoic"
         ),
         "Anime Popstar" to AvatarTraits(
             name = "Kira Idol",
@@ -218,7 +222,8 @@ fun AvatarCreatorScreen(
             skinTone = "Porcelain",
             expression = "Playful Wink",
             accessory = "Cat Ear Headset",
-            backgroundStyle = "Pastel Aura"
+            backgroundStyle = "Pastel Aura",
+            personality = "Cheerful"
         ),
         "Sci-Fi Android" to AvatarTraits(
             name = "Aria Android",
@@ -231,7 +236,8 @@ fun AvatarCreatorScreen(
             skinTone = "Porcelain",
             expression = "Fierce",
             accessory = "Star Hairpin",
-            backgroundStyle = "Cyber City Night"
+            backgroundStyle = "Cyber City Night",
+            personality = "Stoic"
         ),
         "Casual Chic" to AvatarTraits(
             name = "Maya Casual",
@@ -244,7 +250,8 @@ fun AvatarCreatorScreen(
             skinTone = "Warm Bronze",
             expression = "Confident Smile",
             accessory = "None",
-            backgroundStyle = "Pastel Aura"
+            backgroundStyle = "Pastel Aura",
+            personality = "Nurturing"
         )
     )
 
@@ -365,7 +372,8 @@ fun AvatarCreatorScreen(
                                         skinTone = skinTones.keys.toList().random(),
                                         expression = expressions.random(),
                                         accessory = accessories.random(),
-                                        backgroundStyle = backgroundStyles.random()
+                                        backgroundStyle = backgroundStyles.random(),
+                                        personality = personalities.random()
                                     )
                                     Toast.makeText(context, "Traits randomized!", Toast.LENGTH_SHORT).show()
                                 },
@@ -602,6 +610,7 @@ fun AvatarCreatorScreen(
                                 TraitPill(label = localTraits.hairStyle, tint = hairColors[localTraits.hairColor] ?: NeonMagenta)
                                 TraitPill(label = localTraits.eyeStyle, tint = eyeColors[localTraits.eyeColor] ?: NeonCyan)
                                 TraitPill(label = localTraits.clothingStyle, tint = clothingColors[localTraits.clothingColor] ?: NeonPurple)
+                                TraitPill(label = localTraits.personality, tint = NeonCyan)
                                 TraitPill(label = localTraits.accessory, tint = TextPrimary)
                             }
 
@@ -909,7 +918,44 @@ fun AvatarCreatorScreen(
                                 }
 
                                 4 -> {
-                                    // EXTRAS & ACCESSORIES
+                                    // EXTRAS & ACCESSORIES & PERSONALITY
+                                    Text(
+                                        text = "Personality & Roleplay Archetype",
+                                        style = MaterialTheme.typography.titleMedium.copy(color = TextPrimary, fontWeight = FontWeight.Bold)
+                                    )
+                                    Text(
+                                        text = "Shapes how Gemini AI talks, reacts, and roleplays in chat",
+                                        style = MaterialTheme.typography.bodySmall.copy(color = TextMuted, fontSize = 11.sp)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        personalities.forEach { p ->
+                                            val isSelected = localTraits.personality == p
+                                            FilterChip(
+                                                selected = isSelected,
+                                                onClick = { localTraits = localTraits.copy(personality = p) },
+                                                label = { Text(p) },
+                                                leadingIcon = if (isSelected) {
+                                                    { Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                                } else null,
+                                                colors = FilterChipDefaults.filterChipColors(
+                                                    selectedContainerColor = NeonMagenta,
+                                                    selectedLabelColor = Color.White,
+                                                    containerColor = DarkSurfaceVariant,
+                                                    labelColor = TextSecondary
+                                                ),
+                                                modifier = Modifier.testTag("personality_${p.lowercase()}")
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Divider(color = DarkBorder, thickness = 0.5.dp)
+                                    Spacer(modifier = Modifier.height(16.dp))
+
                                     Text(
                                         text = "Accessories",
                                         style = MaterialTheme.typography.titleMedium.copy(color = TextPrimary, fontWeight = FontWeight.Bold)

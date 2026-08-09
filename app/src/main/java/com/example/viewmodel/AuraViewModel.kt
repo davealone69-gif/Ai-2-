@@ -25,7 +25,7 @@ import java.util.UUID
 class AuraViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AuraDatabase.getDatabase(application)
-    private val repository = AuraRepository(db.personaDao(), db.chatDao(), db.videoDao())
+    private val repository = AuraRepository(db.personaDao(), db.chatDao(), db.videoDao(), db.memoryDao())
 
     val personas: StateFlow<List<PersonaEntity>> = repository.allPersonas.stateIn(
         scope = viewModelScope,

@@ -11,5 +11,17 @@ data class ChatMessageEntity(
     val text: String,
     val actionText: String? = null,
     val snapshotPrompt: String? = null,
+    val photoPrompt: String? = null,
+    val photoUrl: String? = null,
+    val photoAspectRatio: String? = null,
+    val photoStyle: String? = null,
+    val videoPrompt: String? = null,
+    val videoCameraMotion: String? = null,
+    val videoDurationSec: Int? = null,
+    val avatarExpression: String? = null,
+    val avatarGesture: String? = null,
+    val avatarVoiceEmotion: String? = null,
+    val memoryUpdatesJson: String? = null,
+    val rawPayloadJson: String? = null,
     val timestamp: Long = System.currentTimeMillis()
 )

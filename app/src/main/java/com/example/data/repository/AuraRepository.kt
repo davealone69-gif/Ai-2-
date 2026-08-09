@@ -1,19 +1,26 @@
 package com.example.data.repository
 
 import com.example.data.dao.ChatDao
+import com.example.data.dao.MemoryDao
 import com.example.data.dao.PersonaDao
 import com.example.data.dao.VideoDao
 import com.example.data.model.ChatMessageEntity
 import com.example.data.model.PersonaEntity
+import com.example.data.model.PersonaMemoryEntity
 import com.example.data.model.VideoProjectEntity
 import com.example.data.remote.GeminiApiService
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
+import com.example.data.model.SwarmPayloadParser
+import org.json.JSONArray
+import org.json.JSONObject
+
 class AuraRepository(
     private val personaDao: PersonaDao,
     private val chatDao: ChatDao,
     private val videoDao: VideoDao,
+    private val memoryDao: MemoryDao? = null,
     private val geminiApiService: GeminiApiService = GeminiApiService()
 ) {
 
@@ -172,16 +179,52 @@ class AuraRepository(
             temperature = persona.creativityTemp
         )
 
+        // Parse SWARM_MASTER payload JSON or raw response
+        val swarmPayload = SwarmPayloadParser.parse(aiResponseText, persona.name)
+
         // Parse actions in *action* and main text
-        val actionMatch = Regex("\\*(.*?)\\*").find(aiResponseText)
-        val actionText = actionMatch?.groupValues?.get(1)
+        val actionMatch = Regex("\\*(.*?)\\*").find(swarmPayload.chatText)
+        val actionText = actionMatch?.groupValues?.get(1) ?: swarmPayload.avatarGesture
+
+        // Convert memory updates list to JSON string for storage and write to local Room DB via UPSERT
+        val memoryJson = if (swarmPayload.memoryUpdates.isNotEmpty()) {
+            val arr = JSONArray()
+            swarmPayload.memoryUpdates.forEach { (k, v) ->
+                arr.put(JSONObject().apply {
+                    put("key", k)
+                    put("value", v)
+                })
+                // Write memory_updates to local Room DB using UPSERT (OnConflictStrategy.REPLACE based on key)
+                memoryDao?.upsertMemory(
+                    PersonaMemoryEntity(
+                        key = k,
+                        value = v,
+                        personaId = persona.id,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+            }
+            arr.toString()
+        } else null
 
         val modelMsg = ChatMessageEntity(
             personaId = persona.id,
             sender = "model",
-            text = aiResponseText,
+            text = swarmPayload.chatText, // Pass payloads.chat.text directly to chat interface!
             actionText = actionText,
-            snapshotPrompt = "Photorealistic snapshot of ${persona.name}, ${persona.title}, in ${persona.scenario}"
+            snapshotPrompt = swarmPayload.photoPrompt ?: "Photorealistic snapshot of ${persona.name}, ${persona.title}",
+            photoPrompt = swarmPayload.photoPrompt, // Direct payloads.photo_generation.prompt to image generation pipeline
+            photoUrl = swarmPayload.photoUrl,
+            photoAspectRatio = swarmPayload.photoAspectRatio,
+            photoStyle = swarmPayload.photoStyle,
+            videoPrompt = swarmPayload.videoPrompt, // Direct payloads.video_generation.prompt to video model pipeline
+            videoCameraMotion = swarmPayload.videoCameraMotion,
+            videoDurationSec = swarmPayload.videoDurationSec,
+            avatarExpression = swarmPayload.avatarExpression, // Send payloads.avatar_state parameters to Live2D / avatar rendering engine
+            avatarGesture = swarmPayload.avatarGesture,
+            avatarVoiceEmotion = swarmPayload.avatarVoiceEmotion,
+            memoryUpdatesJson = memoryJson,
+            rawPayloadJson = swarmPayload.rawJson
         )
         chatDao.insertMessage(modelMsg)
         return modelMsg

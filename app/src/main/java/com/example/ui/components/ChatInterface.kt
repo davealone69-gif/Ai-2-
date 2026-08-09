@@ -1,7 +1,20 @@
 package com.example.ui.components
 
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,11 +44,14 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +60,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -62,6 +79,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.data.AvatarTraits
 import com.example.data.repository.GeminiRepository
 import com.example.ui.theme.DarkBorder
@@ -74,6 +92,7 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
+import java.util.Locale
 import java.util.UUID
 
 data class AvatarChatMessage(
@@ -86,7 +105,8 @@ data class AvatarChatMessage(
 
 /**
  * Natural language chat interface powering direct 1-on-1 interaction
- * with a customized AI Avatar using the Gemini AI client SDK.
+ * with a customized AI Avatar using Gemini AI, with TTS speech synthesis,
+ * STT speech-to-text voice input, and an animated typing indicator.
  */
 @Composable
 fun ChatInterface(
@@ -101,6 +121,117 @@ fun ChatInterface(
 
     var inputText by remember { mutableStateOf("") }
     var isGenerating by remember { mutableStateOf(false) }
+    var isListening by remember { mutableStateOf(false) }
+    var autoSpeakEnabled by remember { mutableStateOf(true) }
+    var isTtsInitialized by remember { mutableStateOf(false) }
+    var isSpeaking by remember { mutableStateOf(false) }
+    var textToSpeech by remember { mutableStateOf<TextToSpeech?>(null) }
+
+    // Initialize TextToSpeech engine
+    DisposableEffect(context, avatarTraits) {
+        var ttsEngine: TextToSpeech? = null
+        ttsEngine = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                ttsEngine?.language = Locale.US
+                // Adjust pitch based on avatar traits for custom voice feel
+                val pitch = when {
+                    avatarTraits.hairStyle.contains("Twin") || avatarTraits.clothingStyle.contains("Idol") -> 1.25f
+                    avatarTraits.clothingStyle.contains("Blazer") || avatarTraits.clothingStyle.contains("Armor") -> 0.92f
+                    avatarTraits.expression.contains("Fierce") -> 1.15f
+                    else -> 1.05f
+                }
+                ttsEngine?.setPitch(pitch)
+                ttsEngine?.setSpeechRate(1.0f)
+                textToSpeech = ttsEngine
+                isTtsInitialized = true
+            }
+        }
+
+        onDispose {
+            ttsEngine?.stop()
+            ttsEngine?.shutdown()
+        }
+    }
+
+    fun speakText(text: String) {
+        val tts = textToSpeech
+        if (tts != null && isTtsInitialized) {
+            // Filter out roleplay action descriptions inside asterisks (*smiles*) for cleaner audio
+            val cleanText = text.replace(Regex("\\*.*?\\*"), "").trim()
+            if (cleanText.isNotBlank()) {
+                tts.stop()
+                tts.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null, "AvatarSpeechId")
+                isSpeaking = true
+            }
+        } else if (onSpeakText != null) {
+            onSpeakText(text)
+        }
+    }
+
+    fun stopSpeaking() {
+        textToSpeech?.stop()
+        isSpeaking = false
+    }
+
+    // Speech To Text (STT) Launchers
+    val sttLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        isListening = false
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null) {
+            val spokenMatches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val recognizedText = spokenMatches?.firstOrNull()
+            if (!recognizedText.isNullOrBlank()) {
+                inputText = recognizedText
+                Toast.makeText(context, "Voice captured!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to ${avatarTraits.name}...")
+            }
+            try {
+                isListening = true
+                sttLauncher.launch(intent)
+            } catch (e: Exception) {
+                isListening = false
+                Toast.makeText(context, "Speech recognition not supported on device.", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "Microphone permission required for voice input", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun startVoiceInput() {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (hasPermission) {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to ${avatarTraits.name}...")
+            }
+            try {
+                isListening = true
+                sttLauncher.launch(intent)
+            } catch (e: Exception) {
+                isListening = false
+                Toast.makeText(context, "Speech recognition not available on this device.", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     val initialGreeting = remember(avatarTraits) {
         "Hey there! I'm ${avatarTraits.name}. Styled with my ${avatarTraits.hairColor} ${avatarTraits.hairStyle} and ${avatarTraits.clothingStyle}. What shall we explore together today?"
@@ -164,7 +295,6 @@ fun ChatInterface(
         isGenerating = true
 
         coroutineScope.launch {
-            // Build conversation transcript context for multi-turn feel
             val conversationContext = buildString {
                 messages.takeLast(6).forEach { msg ->
                     val role = if (msg.isFromUser) "User" else avatarTraits.name
@@ -182,24 +312,32 @@ fun ChatInterface(
 
             result.fold(
                 onSuccess = { responseText ->
+                    val responseClean = responseText.trim()
                     messages.add(
                         AvatarChatMessage(
                             senderName = avatarTraits.name,
-                            text = responseText.trim(),
+                            text = responseClean,
                             isFromUser = false
                         )
                     )
+                    if (autoSpeakEnabled) {
+                        speakText(responseClean)
+                    }
                 },
                 onFailure = { error ->
                     val errorMsg = error.message ?: "Could not get response from Gemini AI."
                     Toast.makeText(context, errorMsg, Toast.LENGTH_SHORT).show()
+                    val fallbackText = "*winks* Oops, my neural link glitched for a second! Let's try saying that again."
                     messages.add(
                         AvatarChatMessage(
                             senderName = avatarTraits.name,
-                            text = "*winks* Oops, my neural link glitched for a second! Let's try saying that again.",
+                            text = fallbackText,
                             isFromUser = false
                         )
                     )
+                    if (autoSpeakEnabled) {
+                        speakText(fallbackText)
+                    }
                 }
             )
 
@@ -224,7 +362,7 @@ fun ChatInterface(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -279,9 +417,42 @@ fun ChatInterface(
                         }
                     }
 
-                    Row {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // TTS Auto-Play Voice Toggle Button
                         IconButton(
                             onClick = {
+                                autoSpeakEnabled = !autoSpeakEnabled
+                                if (!autoSpeakEnabled) stopSpeaking()
+                                val statusText = if (autoSpeakEnabled) "Voice auto-play ON" else "Voice auto-play OFF"
+                                Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.testTag("btn_toggle_tts")
+                        ) {
+                            Icon(
+                                imageVector = if (autoSpeakEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                                contentDescription = "Toggle Audio TTS",
+                                tint = if (autoSpeakEnabled) NeonCyan else TextMuted
+                            )
+                        }
+
+                        // Stop playback button if actively speaking
+                        if (isSpeaking) {
+                            IconButton(
+                                onClick = { stopSpeaking() },
+                                modifier = Modifier.testTag("btn_stop_speech")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.GraphicEq,
+                                    contentDescription = "Stop Speech",
+                                    tint = NeonMagenta
+                                )
+                            }
+                        }
+
+                        // Reset Chat Button
+                        IconButton(
+                            onClick = {
+                                stopSpeaking()
                                 messages.clear()
                                 messages.add(
                                     AvatarChatMessage(
@@ -353,10 +524,10 @@ fun ChatInterface(
                                             )
                                         )
 
-                                        if (!isUser && onSpeakText != null) {
+                                        if (!isUser) {
                                             IconButton(
-                                                onClick = { onSpeakText(msg.text) },
-                                                modifier = Modifier.size(20.dp)
+                                                onClick = { speakText(msg.text) },
+                                                modifier = Modifier.size(22.dp)
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.VolumeUp,
@@ -381,23 +552,10 @@ fun ChatInterface(
                         }
                     }
 
+                    // Animated Typing Indicator
                     if (isGenerating) {
                         item {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(14.dp),
-                                    color = NeonMagenta,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "${avatarTraits.name} is thinking...",
-                                    style = MaterialTheme.typography.labelSmall.copy(color = NeonMagenta)
-                                )
-                            }
+                            AnimatedTypingBubble(avatarName = avatarTraits.name)
                         }
                     }
                 }
@@ -440,7 +598,7 @@ fun ChatInterface(
                 }
             }
 
-            // Bottom Input Bar
+            // Bottom Input Bar with Mic STT & Send
             Surface(
                 color = DarkSurfaceVariant,
                 border = androidx.compose.foundation.BorderStroke(1.dp, DarkBorder)
@@ -448,15 +606,41 @@ fun ChatInterface(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val isValid = inputText.trim().isNotBlank() && !isGenerating
 
+                    // Speech To Text Microphone Button
+                    IconButton(
+                        onClick = { startVoiceInput() },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(if (isListening) NeonMagenta.copy(alpha = 0.3f) else DarkSurface)
+                            .border(1.dp, if (isListening) NeonMagenta else DarkBorder, CircleShape)
+                            .testTag("btn_mic_speech_to_text")
+                    ) {
+                        Icon(
+                            imageVector = if (isListening) Icons.Default.GraphicEq else Icons.Default.Mic,
+                            contentDescription = "Voice Input (STT)",
+                            tint = if (isListening) NeonMagenta else NeonCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
-                        placeholder = { Text("Chat with ${avatarTraits.name}...", color = TextMuted, fontSize = 12.sp) },
+                        placeholder = {
+                            Text(
+                                text = if (isListening) "Listening..." else "Message ${avatarTraits.name}...",
+                                color = TextMuted,
+                                fontSize = 12.sp
+                            )
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .testTag("input_avatar_chat"),
@@ -479,7 +663,7 @@ fun ChatInterface(
                         maxLines = 3
                     )
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
                     IconButton(
                         onClick = {
@@ -505,6 +689,94 @@ fun ChatInterface(
                             tint = if (isValid) Color.White else TextMuted
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Animated typing indicator bubble displaying bouncing dot keyframes.
+ */
+@Composable
+fun AnimatedTypingBubble(avatarName: String) {
+    val infiniteTransition = rememberInfiniteTransition(label = "typing_dots_transition")
+
+    val dot1Scale by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot1"
+    )
+
+    val dot2Scale by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, delayMillis = 180),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot2"
+    )
+
+    val dot3Scale by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, delayMillis = 360),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot3"
+    )
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start
+    ) {
+        Surface(
+            color = DarkSurfaceVariant,
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, NeonMagenta.copy(alpha = 0.4f)),
+            modifier = Modifier.testTag("typing_indicator_bubble")
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "$avatarName is typing",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = NeonMagenta,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size((7 * dot1Scale).dp)
+                            .clip(CircleShape)
+                            .background(NeonMagenta)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size((7 * dot2Scale).dp)
+                            .clip(CircleShape)
+                            .background(NeonCyan)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size((7 * dot3Scale).dp)
+                            .clip(CircleShape)
+                            .background(NeonPurple)
+                    )
                 }
             }
         }
